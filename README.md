@@ -2,7 +2,7 @@
 
 > 把 B 站那个「250 页翻到吐」的黑名单页面，变成一个能搜索、能排序、能批量操作的管理面板。
 
-![version](https://img.shields.io/badge/version-0.9.4-00aeec)
+![version](https://img.shields.io/badge/version-0.9.5-00aeec)
 ![platform](https://img.shields.io/badge/platform-Tampermonkey%20%7C%20ScriptCat-fb7299)
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![size](https://img.shields.io/badge/size-~38KB-lightgrey)
@@ -70,15 +70,30 @@ B 站黑名单管理页的原生体验，实测数据如下：
 
 ## 安装
 
+### 一键安装（推荐）
+
+<a href="https://raw.githubusercontent.com/lei39/bilibili-blacklist-manager/main/bili-blacklist-manager.user.js">
+  <img src="https://img.shields.io/badge/%E8%84%9A%E6%9C%AC%E7%8C%AB-%E7%82%B9%E5%87%BB%E5%AE%89%E8%A3%85-fb7299?style=flat-square" alt="点击安装到脚本猫">
+</a>
+<a href="https://raw.githubusercontent.com/lei39/bilibili-blacklist-manager/main/bili-blacklist-manager.user.js">
+  <img src="https://img.shields.io/badge/Tampermonkey-%E7%82%B9%E5%87%BB%E5%AE%89%E8%A3%85-00aeec?style=flat-square" alt="点击安装到 Tampermonkey">
+</a>
+
+点一下按钮，脚本管理器会自动弹出安装页，确认即可。
+
+> **原理**：脚本猫 / Tampermonkey 都会拦截所有以 `.user.js` 结尾的链接，把导航重定向到自己的安装界面。所以不需要任何特殊参数，一个普通链接就够了。
+
+脚本托管在 GitHub，`@downloadURL` 与 `@updateURL` 已写进脚本头部——**装上之后会自动检查更新**，以后有新版本不用手动重新导入。
+
 ### 前置要求
 
 - 浏览器：Chrome / Edge / 其他 Chromium 内核
-- 用户脚本管理器：**脚本猫（ScriptCat）** 或 Tampermonkey
+- 用户脚本管理器：**[脚本猫 ScriptCat](https://github.com/scriptscat/scriptcat)**（开源、支持云同步）或 Tampermonkey
 - 已登录 B 站
 
-### 步骤
+### 手动安装
 
-1. 下载 `bili-blacklist-manager.user.js`
+1. 下载 [`bili-blacklist-manager.user.js`](https://raw.githubusercontent.com/lei39/bilibili-blacklist-manager/main/bili-blacklist-manager.user.js)
 2. 打开脚本猫管理面板 → **导入脚本** → 选择该文件
 3. 确认安装，确保脚本处于**启用**状态
 4. 打开 [B 站黑名单页面](https://account.bilibili.com/account/blacklist)，右下角会出现悬浮按钮
@@ -232,6 +247,12 @@ B 站黑名单管理页的原生体验，实测数据如下：
 - 接口行为可能随 B 站改版变化，脚本不保证长期可用
 - 使用造成的任何后果由使用者自行承担
 
+## 相关链接
+
+- **[脚本猫 ScriptCat](https://github.com/scriptscat/scriptcat)** — 本脚本的安装与更新依赖它，开源、支持云同步
+- [ScriptCat 脚本商店](https://scriptcat.org/) / [开发文档](https://docs.scriptcat.org/)
+- [Tampermonkey](https://www.tampermonkey.net/) — 同样兼容，脚本格式完全一致
+
 ## License
 
-MIT
+MIT © 2026 lei39
