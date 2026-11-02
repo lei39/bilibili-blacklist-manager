@@ -1,5 +1,8 @@
 .workbuddy/
 test.user.js
+.publish.py
+.mask.py
+.mask-meta.json
 *.log
 Thumbs.db
 .DS_Store
