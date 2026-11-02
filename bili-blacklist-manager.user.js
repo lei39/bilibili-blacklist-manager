@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         B站黑名单增强管理
 // @namespace    workbuddy.bili.blacklist
-// @version      0.9.5
+// @version      0.10.1
 // @description  在 B 站黑名单页面注入按钮，点击打开浮窗：全量加载、搜索、排序、只看疑似注销、多选、手动批量取消拉黑
 // @author       lei39
 // @license      MIT
@@ -97,8 +97,38 @@
   // ---------- 判定（只标记，不自动删） ----------
   const isNoFace = (u) => NOFACE.test(u.face || '');
   const isSuspicious = (u) => isNoFace(u) || u.uname === CANCELLED_NAME;
+
+  // 账号状态核验缓存：mid -> {lv, spacesta, fans, friend, archive, like}
+  //   spacesta === -2  → 账号被封禁
+  //   lv === 0 且有历史数据 → 账号已注销（等级被清零）
+  const stateCache = new Map();
+  const STATE_KEY = 'bl_state_v1';
+
+  function loadStates() {
+    try {
+      const raw = store.get(STATE_KEY, null);
+      if (!raw) return;
+      const obj = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      Object.keys(obj || {}).forEach((mid) => stateCache.set(mid, obj[mid]));
+    } catch (e) { /* ignore */ }
+  }
+  function saveStates() {
+    const obj = {};
+    stateCache.forEach((v, k) => { obj[k] = v; });
+    store.set(STATE_KEY, JSON.stringify(obj));
+  }
+
   function classify(u) {
     if (u.uname === CANCELLED_NAME) return { tag: '已注销', cls: 'bad' };
+    const st = stateCache.get(String(u.mid));
+    if (st) {
+      if (st.spacesta === -2) return { tag: '已封禁', cls: 'ban' };
+      const hasHistory = st.fans > 0 || st.friend > 0 || st.archive > 0 || st.like > 0;
+      if (st.lv === 0) {
+        return hasHistory ? { tag: '已注销 LV0', cls: 'bad' } : { tag: 'LV0 空号', cls: 'warn' };
+      }
+      return { tag: `无头像 LV${st.lv}`, cls: 'mute' };
+    }
     if (isNoFace(u)) return { tag: '疑似注销', cls: 'warn' };
     return { tag: '', cls: '' };
   }
@@ -151,6 +181,7 @@
     q: '', sortKey: 'mtime', sortDesc: true,
     pageSize: 50, page: 1, mode: 'list',
     onlySus: false, loading: false, open: false,
+    verifying: false, verifyDone: 0, verifyTotal: 0,
   };
 
   // ---------- 样式 ----------
@@ -199,6 +230,7 @@
   .blm-name{font-weight:500}
   .blm-tag{display:inline-block;padding:1px 6px;border-radius:4px;font-size:11px;margin-left:6px;flex:none;white-space:nowrap}
   .blm-tag.bad{background:#fde2e2;color:#c45656}
+  .blm-tag.ban{background:#4a4a55;color:#fff}
   .blm-tag.warn{background:#fdf6ec;color:#b88230}
   .blm-tag.mute{background:#f1f2f3;color:#9499a0}
   .blm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:10px;padding:12px 12px 48px}
@@ -389,10 +421,21 @@
     if (hint) {
       hint.style.display = state.onlySus ? 'block' : 'none';
       if (state.onlySus) {
-        hint.innerHTML = `当前正在只看 <b>疑似注销</b>（${susCount} 个）。判定依据只有两条：`
-          + `昵称等于「<b>账号已注销</b>」，或头像为 B 站默认头像 <code>noface.jpg</code>。`
-          + `这两条都只是<b>特征标记，不代表账号真的注销</b>。批量移除不可撤销，请逐条确认。`;
+        hint.innerHTML = `当前正在只看 <b>疑似注销</b>（${susCount} 个）。初始判定只看两条特征：`
+          + `昵称等于「<b>账号已注销</b>」，或头像为 B 站默认头像 <code>noface.jpg</code>——`
+          + `这两条<b>并不代表账号真的注销</b>。点 <b>「核验状态」</b> 可逐个查接口确认：`
+          + `<b>已封禁</b>（<code>spacesta=-2</code>）、<b>已注销</b>（等级清零且仍有历史数据）。`;
       }
+    }
+
+    // 核验按钮状态
+    const verifyBtn = panel.querySelector('[data-act="verify"]');
+    if (verifyBtn) {
+      const pending = state.list.filter((u) => isSuspicious(u) && !stateCache.get(String(u.mid))).length;
+      verifyBtn.disabled = state.verifying || pending === 0;
+      verifyBtn.textContent = state.verifying
+        ? `核验中 ${state.verifyDone}/${state.verifyTotal}`
+        : (pending ? `核验状态 (${pending})` : '状态已核验');
     }
 
     // 排序按钮显示当前排序方向（表格模式没有表头可点，靠这里给反馈）
@@ -473,6 +516,56 @@
   }
 
   // 只对「疑似注销」的账号逐个查等级（每人一次请求），用于把"没传头像"和"真注销"区分开
+  // 核验账号状态：只查「疑似注销」那批，用一次 card 接口同时拿到封禁状态(spacesta)与等级(level)
+  async function verifyStates() {
+    if (state.verifying) return;
+    const targets = state.list.filter((u) => isSuspicious(u) && !stateCache.get(String(u.mid)));
+    if (!targets.length) { toast('没有需要核验的账号'); return; }
+    state.verifying = true;
+    state.verifyDone = 0;
+    state.verifyTotal = targets.length;
+    render();
+    let okCount = 0, failCount = 0;
+    for (const u of targets) {
+      let done = false;
+      for (let attempt = 0; attempt < 2 && !done; attempt++) {
+        try {
+          const res = await fetch(`https://api.bilibili.com/x/web-interface/card?mid=${u.mid}&photo=true`, { credentials: 'include' });
+          const j = await res.json();
+          if (j.code === 0 && j.data && j.data.card) {
+            const c = j.data.card;
+            stateCache.set(String(u.mid), {
+              lv: c.level_info ? c.level_info.current_level : null,
+              spacesta: c.spacesta,
+              fans: c.fans || 0,
+              friend: c.friend || 0,
+              archive: j.data.archive_count || 0,
+              like: j.data.like_num || 0,
+            });
+            done = true;
+          } else if (j.code === -352) {
+            await sleep(3000);           // 触发风控，等冷却后再试
+          } else {
+            done = true;                 // 账号查不到，不缓存，下次可重试
+          }
+        } catch (e) {
+          await sleep(800);
+        }
+      }
+      if (done) okCount++; else failCount++;
+      state.verifyDone++;
+      if (state.verifyDone % 5 === 0) { saveStates(); render(); }
+      await sleep(500);
+    }
+    saveStates();
+    state.verifying = false;
+    rebuildView();
+    render();
+    toast(failCount
+      ? `核验完成：成功 ${okCount} 个，${failCount} 个被风控限流，稍后再点一次可重试`
+      : `核验完成：${okCount} 个账号`);
+  }
+
   async function execUnblock() {
     const mids = [...state.selected];
     if (!mids.length) return;
@@ -533,6 +626,7 @@
   // ---------- 挂载 ----------
   function mount() {
     if (document.querySelector('.blm-fab')) return;
+    loadStates();
 
     const s = document.createElement('style');
     s.id = 'blm-style';
@@ -563,6 +657,7 @@
         <button class="blm-btn" data-act="sort:uid">UID</button>
         <button class="blm-btn" data-act="sort:name">昵称</button>
         <button class="blm-btn" data-act="onlySus">只看疑似注销</button>
+        <button class="blm-btn" data-act="verify" title="逐个查询 card 接口，核实账号的真实状态：已封禁（spacesta=-2）、已注销（等级清零且仍有历史数据）、等级。&#10;&#10;注意：B 站对该接口有时间窗口配额（约 100 次请求），连续查询会触发 -352 限流；被限流的账号不会写入缓存，稍后再点一次即可继续核验，不会重复请求已成功的账号。">核验状态</button>
         <button class="blm-btn" data-act="mode">视图：列表</button>
         <select class="blm-inp" style="width:auto" data-act="size">
           <option value="50">每页 50</option><option value="90">每页 90</option><option value="140">每页 140</option>
@@ -735,6 +830,7 @@
         state.page = 1;
         rebuildView(); render(); return;
       }
+      if (act === 'verify') return verifyStates();
       if (act === 'mode') {
         state.mode = state.mode === 'list' ? 'grid' : 'list';
         t.textContent = '视图：' + (state.mode === 'list' ? '列表' : '表格');
