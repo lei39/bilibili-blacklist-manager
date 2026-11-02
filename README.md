@@ -72,16 +72,16 @@ B 站黑名单管理页的原生体验，实测数据如下：
 
 ### 一键安装（推荐）
 
-<a href="https://raw.githubusercontent.com/lei39/bilibili-blacklist-manager/main/bili-blacklist-manager.user.js">
+<a href="https://cdn.jsdelivr.net/gh/lei39/bilibili-blacklist-manager@main/bili-blacklist-manager.user.js">
   <img src="https://img.shields.io/badge/%E8%84%9A%E6%9C%AC%E7%8C%AB-%E7%82%B9%E5%87%BB%E5%AE%89%E8%A3%85-fb7299?style=flat-square" alt="点击安装到脚本猫">
 </a>
-<a href="https://raw.githubusercontent.com/lei39/bilibili-blacklist-manager/main/bili-blacklist-manager.user.js">
+<a href="https://cdn.jsdelivr.net/gh/lei39/bilibili-blacklist-manager@main/bili-blacklist-manager.user.js">
   <img src="https://img.shields.io/badge/Tampermonkey-%E7%82%B9%E5%87%BB%E5%AE%89%E8%A3%85-00aeec?style=flat-square" alt="点击安装到 Tampermonkey">
 </a>
 
 点一下按钮，脚本管理器会自动弹出安装页，确认即可。
 
-> **原理**：脚本猫 / Tampermonkey 都会拦截所有以 `.user.js` 结尾的链接，把导航重定向到自己的安装界面。所以不需要任何特殊参数，一个普通链接就够了。
+> **原理**：脚本猫 / Tampermonkey 都会拦截所有以 `.user.js` 结尾的链接，把导航重定向到自己的安装界面。所以不需要任何特殊参数，一个普通链接就够了。实测点击后浏览器直接跳到 `chrome-extension://…/src/install.html#url=…`。
 
 脚本托管在 GitHub，`@downloadURL` 与 `@updateURL` 已写进脚本头部——**装上之后会自动检查更新**，以后有新版本不用手动重新导入。
 
@@ -93,7 +93,7 @@ B 站黑名单管理页的原生体验，实测数据如下：
 
 ### 手动安装
 
-1. 下载 [`bili-blacklist-manager.user.js`](https://raw.githubusercontent.com/lei39/bilibili-blacklist-manager/main/bili-blacklist-manager.user.js)
+1. 下载 [`bili-blacklist-manager.user.js`](https://raw.githubusercontent.com/lei39/bilibili-blacklist-manager/main/bili-blacklist-manager.user.js)（原始文件在 GitHub，也可从 [jsDelivr](https://cdn.jsdelivr.net/gh/lei39/bilibili-blacklist-manager@main/bili-blacklist-manager.user.js) 取）
 2. 打开脚本猫管理面板 → **导入脚本** → 选择该文件
 3. 确认安装，确保脚本处于**启用**状态
 4. 打开 [B 站黑名单页面](https://account.bilibili.com/account/blacklist)，右下角会出现悬浮按钮
