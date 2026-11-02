@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         B站黑名单增强管理
 // @namespace    workbuddy.bili.blacklist
-// @version      0.10.1
+// @version      0.10.2
 // @description  在 B 站黑名单页面注入按钮，点击打开浮窗：全量加载、搜索、排序、只看疑似注销、多选、手动批量取消拉黑
 // @author       lei39
 // @license      MIT
@@ -102,7 +102,7 @@
   //   spacesta === -2  → 账号被封禁
   //   lv === 0 且有历史数据 → 账号已注销（等级被清零）
   const stateCache = new Map();
-  const STATE_KEY = 'bl_state_v1';
+  const STATE_KEY = 'bl_state_v2';
 
   function loadStates() {
     try {
@@ -121,6 +121,7 @@
   function classify(u) {
     if (u.uname === CANCELLED_NAME) return { tag: '已注销', cls: 'bad' };
     const st = stateCache.get(String(u.mid));
+    if (st && st.failed) return { tag: '未核验', cls: 'mute' };
     if (st) {
       if (st.spacesta === -2) return { tag: '已封禁', cls: 'ban' };
       const hasHistory = st.fans > 0 || st.friend > 0 || st.archive > 0 || st.like > 0;
@@ -181,7 +182,7 @@
     q: '', sortKey: 'mtime', sortDesc: true,
     pageSize: 50, page: 1, mode: 'list',
     onlySus: false, loading: false, open: false,
-    verifying: false, verifyDone: 0, verifyTotal: 0,
+    verifying: false, verifyDone: 0, verifyTotal: 0, verifyRound: 0, waiting: 0,
   };
 
   // ---------- 样式 ----------
@@ -285,22 +286,23 @@
   .blm-modal-mask{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000010;display:flex;
     align-items:center;justify-content:center;opacity:0;transition:opacity .18s ease}
   .blm-modal-mask.on{opacity:1}
-  .blm-modal{width:420px;max-width:90vw;background:#fff;border-radius:10px;overflow:hidden;
-    box-shadow:0 16px 48px rgba(0,0,0,.28);transform:scale(.96);transition:transform .18s ease}
+  .blm-modal{width:360px;max-width:88vw;background:#fff;border-radius:8px;overflow:hidden;
+    box-shadow:0 12px 36px rgba(0,0,0,.24);transform:scale(.97);transition:transform .18s ease}
   .blm-modal-mask.on .blm-modal{transform:scale(1)}
-  .blm-modal-hd{padding:16px 18px 0;font-size:15px;font-weight:600}
-  .blm-modal-bd{padding:10px 18px 16px;font-size:13px;color:#61666d;line-height:1.65;max-height:320px;overflow:auto}
+  .blm-modal-hd{padding:14px 16px 0;font-size:14px;font-weight:600}
+  .blm-modal-bd{padding:8px 16px 14px;font-size:12.5px;color:#61666d;line-height:1.6;max-height:300px;overflow:auto}
   .blm-modal-bd b{color:#18191c}
   .blm-modal-list{margin:8px 0 0;padding:0;list-style:none;font-size:12px;color:#9499a0;
-    max-height:132px;overflow:auto;border-top:1px solid #f1f2f3;padding-top:6px}
-  .blm-modal-list li{padding:3px 0;font-variant-numeric:tabular-nums}
-  .blm-modal-ft{display:flex;gap:10px;justify-content:flex-end;padding:0 18px 16px}
-  .blm-modal-ft .blm-btn{padding:7px 16px;font-size:13px}
+    max-height:120px;overflow:auto;border-top:1px solid #f1f2f3;padding-top:6px}
+  .blm-modal-list li{padding:2px 0;font-variant-numeric:tabular-nums}
+  .blm-modal-ft{display:flex;gap:8px;justify-content:flex-end;padding:0 16px 14px}
+  .blm-modal-ft .blm-btn{padding:6px 14px;font-size:12.5px}
   .blm-btn.pri{background:#00aeec;border-color:#00aeec;color:#fff}
   .blm-btn.pri:hover{background:#00a1d6;color:#fff}
-  .blm-toast{position:fixed;left:50%;bottom:64px;transform:translateX(-50%) translateY(8px);z-index:1000020;
-    background:rgba(24,25,28,.92);color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;
-    opacity:0;transition:opacity .2s ease,transform .2s ease;pointer-events:none;max-width:80vw}
+  .blm-toast{position:fixed;left:50%;bottom:76px;transform:translateX(-50%) translateY(6px);z-index:1000020;
+    background:rgba(24,25,28,.92);color:#fff;padding:7px 14px;border-radius:6px;font-size:12px;
+    opacity:0;transition:opacity .18s ease,transform .18s ease;pointer-events:none;max-width:70vw;
+    box-shadow:0 4px 16px rgba(0,0,0,.18)}
   .blm-toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
   .blm-ft{display:flex;align-items:center;gap:10px;padding:8px 16px;border-top:1px solid #e3e5e7;font-size:12px;color:#9499a0}
   .blm-pg{display:flex;gap:4px;align-items:center;margin-left:auto}
@@ -431,11 +433,13 @@
     // 核验按钮状态
     const verifyBtn = panel.querySelector('[data-act="verify"]');
     if (verifyBtn) {
-      const pending = state.list.filter((u) => isSuspicious(u) && !stateCache.get(String(u.mid))).length;
-      verifyBtn.disabled = state.verifying || pending === 0;
-      verifyBtn.textContent = state.verifying
-        ? `核验中 ${state.verifyDone}/${state.verifyTotal}`
-        : (pending ? `核验状态 (${pending})` : '状态已核验');
+      const pending = state.list.filter((u) => isSuspicious(u) && !isVerified(u.mid)).length;
+      verifyBtn.disabled = state.verifying || state.waiting > 0 || pending === 0;
+      verifyBtn.textContent = state.waiting > 0
+        ? `限流等待 ${state.waiting}s`
+        : state.verifying
+          ? `核验中 ${state.verifyDone}/${state.verifyTotal}`
+          : (pending ? `核验状态 (${pending})` : '状态已核验');
     }
 
     // 排序按钮显示当前排序方向（表格模式没有表头可点，靠这里给反馈）
@@ -516,19 +520,40 @@
   }
 
   // 只对「疑似注销」的账号逐个查等级（每人一次请求），用于把"没传头像"和"真注销"区分开
-  // 核验账号状态：只查「疑似注销」那批，用一次 card 接口同时拿到封禁状态(spacesta)与等级(level)
+  const isVerified = (mid) => {
+    const st = stateCache.get(String(mid));
+    return !!(st && !st.failed);
+  };
+
+  // 撞墙（-352）后等待 N 秒，期间按钮上显示倒计时
+  async function countdown(sec) {
+    state.waiting = sec;
+    const timer = setInterval(() => {
+      state.waiting--;
+      if (state.waiting <= 0) clearInterval(timer);
+      render();
+    }, 1000);
+    await sleep(sec * 1000);
+    clearInterval(timer);
+    state.waiting = 0;
+    render();
+  }
+
+  // 核验账号状态：只查「疑似注销」那批，一次 card 接口同时拿到封禁状态(spacesta)与等级(level)
+  // 撞墙(-352) 立即停止本轮，等待 1 分钟后自动重试，最多 3 轮
   async function verifyStates() {
     if (state.verifying) return;
-    const targets = state.list.filter((u) => isSuspicious(u) && !stateCache.get(String(u.mid)));
-    if (!targets.length) { toast('没有需要核验的账号'); return; }
-    state.verifying = true;
-    state.verifyDone = 0;
-    state.verifyTotal = targets.length;
-    render();
-    let okCount = 0, failCount = 0;
-    for (const u of targets) {
-      let done = false;
-      for (let attempt = 0; attempt < 2 && !done; attempt++) {
+    const MAX_RETRY = 3;
+    for (let round = 0; round <= MAX_RETRY; round++) {
+      const targets = state.list.filter((u) => isSuspicious(u) && !isVerified(u.mid));
+      if (!targets.length) break;
+      state.verifying = true;
+      state.verifyDone = 0;
+      state.verifyTotal = targets.length;
+      state.verifyRound = round + 1;
+      render();
+      let wall = false;
+      for (const u of targets) {
         try {
           const res = await fetch(`https://api.bilibili.com/x/web-interface/card?mid=${u.mid}&photo=true`, { credentials: 'include' });
           const j = await res.json();
@@ -542,28 +567,37 @@
               archive: j.data.archive_count || 0,
               like: j.data.like_num || 0,
             });
-            done = true;
           } else if (j.code === -352) {
-            await sleep(3000);           // 触发风控，等冷却后再试
+            wall = true;                       // 撞墙，立刻停，别再空转
+            stateCache.set(String(u.mid), { failed: 1 });
+            break;
           } else {
-            done = true;                 // 账号查不到，不缓存，下次可重试
+            stateCache.set(String(u.mid), { failed: 1, reason: j.code });
           }
         } catch (e) {
-          await sleep(800);
+          stateCache.set(String(u.mid), { failed: 1 });
         }
+        state.verifyDone++;
+        if (state.verifyDone % 5 === 0) { saveStates(); render(); }
+        await sleep(500);
       }
-      if (done) okCount++; else failCount++;
-      state.verifyDone++;
-      if (state.verifyDone % 5 === 0) { saveStates(); render(); }
-      await sleep(500);
+      saveStates();
+      state.verifying = false;
+      rebuildView();
+      render();
+      const left = state.list.filter((u) => isSuspicious(u) && !isVerified(u.mid)).length;
+      if (!wall) { toast(left ? `完成，${left} 个未查到` : '核验完成'); break; }
+      if (round >= MAX_RETRY) { toast(`已重试 ${MAX_RETRY} 次，${left} 个未查到`); break; }
+      toast(`接口限流，60 秒后重试（${round + 1}/${MAX_RETRY}）`);
+      await countdown(60);
     }
+    // 仍未查到的统一标成「未核验」
+    state.list.forEach((u) => {
+      if (isSuspicious(u) && !isVerified(u.mid)) stateCache.set(String(u.mid), { failed: 1 });
+    });
     saveStates();
-    state.verifying = false;
     rebuildView();
     render();
-    toast(failCount
-      ? `核验完成：成功 ${okCount} 个，${failCount} 个被风控限流，稍后再点一次可重试`
-      : `核验完成：${okCount} 个账号`);
   }
 
   async function execUnblock() {
