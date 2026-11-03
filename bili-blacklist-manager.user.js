@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         B站黑名单增强管理
 // @namespace    workbuddy.bili.blacklist
-// @version      0.10.4
+// @version      0.10.8
 // @description  在 B 站黑名单页面注入按钮，点击打开浮窗：全量加载、搜索、排序、只看疑似注销、多选、手动批量取消拉黑
 // @author       lei39
 // @license      MIT
@@ -18,7 +18,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '0.10.4';
+  const VERSION = '0.10.8';
 
   const NOFACE = /noface/i;
   const CANCELLED_NAME = '账号已注销';
@@ -83,6 +83,80 @@
     });
   }
 
+  // 结果弹窗：不会自动消失，必须手动关闭
+  function showReport(opts) {
+    const o = opts || {};
+    return new Promise((resolve) => {
+      const mask = document.createElement('div');
+      mask.className = 'blm-modal-mask';
+      mask.innerHTML = `
+        <div class="blm-modal">
+          <div class="blm-modal-hd">${esc(o.title || '')}</div>
+          <div class="blm-modal-bd">${o.body || ''}</div>
+          <div class="blm-modal-ft">
+            ${o.extra ? `<button class="blm-btn" data-res="extra">${esc(o.extra)}</button>` : ''}
+            <button class="blm-btn pri" data-res="ok">知道了</button>
+          </div>
+        </div>`;
+      document.body.appendChild(mask);
+      requestAnimationFrame(() => mask.classList.add('on'));
+      let closed = false;
+      const done = (v) => {
+        if (closed) return;
+        closed = true;
+        mask.classList.remove('on');
+        setTimeout(() => mask.remove(), 200);
+        resolve(v);
+      };
+      mask.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-res]');
+        if (b) return done(b.getAttribute('data-res'));
+        if (e.target === mask) return done('ok');
+      });
+    });
+  }
+
+  // 自绘 tooltip（原生 title 太丑且延迟长）
+  function attachTip(el, html) {
+    let tip = null;
+    let timer = null;
+    const show = () => {
+      if (tip) return;
+      tip = document.createElement('div');
+      tip.className = 'blm-tip';
+      tip.innerHTML = html;
+      document.body.appendChild(tip);
+      const r = el.getBoundingClientRect();
+      const tw = tip.offsetWidth;
+      const th = tip.offsetHeight;
+      let left = r.left + r.width / 2 - tw / 2;
+      left = Math.max(10, Math.min(left, window.innerWidth - tw - 10));
+      let top = r.bottom + 9;
+      if (top + th > window.innerHeight - 10) top = r.top - th - 9;
+      tip.style.left = left + 'px';
+      tip.style.top = Math.max(10, top) + 'px';
+      requestAnimationFrame(() => tip && tip.classList.add('on'));
+    };
+    const hide = () => {
+      if (!tip) return;
+      const t = tip;
+      tip = null;
+      t.classList.remove('on');
+      setTimeout(() => t.remove(), 160);
+    };
+    el.addEventListener('mouseover', (e) => {
+      if (!el.contains(e.target)) return;
+      clearTimeout(timer);
+      timer = setTimeout(show, 240);
+    });
+    el.addEventListener('mouseout', (e) => {
+      if (e.relatedTarget && el.contains(e.relatedTarget)) return;
+      clearTimeout(timer);
+      hide();
+    });
+    el.addEventListener('click', () => { clearTimeout(timer); hide(); });
+  }
+
   let toastTimer = null;
   function toast(msg) {
     let el = document.querySelector('.blm-toast');
@@ -105,7 +179,7 @@
   //   spacesta === -2  → 账号被封禁
   //   lv === 0 且有历史数据 → 账号已注销（等级被清零）
   const stateCache = new Map();
-  const STATE_KEY = 'bl_state_v2';
+  const STATE_KEY = 'bl_state_v3';
 
   function loadStates() {
     try {
@@ -301,12 +375,31 @@
   .blm-modal-list li{padding:2px 0;font-variant-numeric:tabular-nums}
   .blm-modal-ft{display:flex;gap:8px;justify-content:flex-end;padding:0 16px 14px}
   .blm-modal-ft .blm-btn{padding:6px 14px;font-size:12.5px}
+  .blm-report{margin:10px 0 0;padding:0;list-style:none;font-size:13px}
+  .blm-report li{display:flex;align-items:center;justify-content:space-between;padding:7px 0;
+    border-bottom:1px solid #f4f5f7}
+  .blm-report li:last-child{border-bottom:none}
+  .blm-report .nm{display:flex;align-items:center;color:#61666d}
+  .blm-report .vl{font-variant-numeric:tabular-nums;font-weight:600;color:#18191c}
+  .blm-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;flex:none}
+  .blm-tip{position:fixed;z-index:1000030;max-width:322px;padding:11px 13px;border-radius:8px;box-sizing:border-box;
+    background:rgba(20,21,24,.96);color:#e8e9eb;font-size:12px;line-height:1.7;text-align:left;
+    box-shadow:0 8px 26px rgba(0,0,0,.3);opacity:0;transform:translateY(-5px);
+    transition:opacity .15s ease,transform .15s ease;pointer-events:none;letter-spacing:.1px;
+    word-break:break-word;overflow-wrap:anywhere}
+  .blm-tip.on{opacity:1;transform:translateY(0)}
+  .blm-tip .hd{color:#fff;font-size:12.5px;font-weight:600;margin-bottom:5px;display:flex;align-items:center;gap:5px}
+  .blm-tip .hd::before{content:'';width:3px;height:12px;border-radius:2px;background:#00aeec;display:block}
+  .blm-tip .row{display:flex;gap:7px;margin-top:4px;align-items:baseline}
+  .blm-tip .k{color:#9499a0;flex:none;font-size:11.5px}
+  .blm-tip code{background:rgba(255,255,255,.13);padding:1px 5px;border-radius:3px;
+    font-family:ui-monospace,Consolas,monospace;font-size:11px;color:#ffd08a}
   .blm-btn.pri{background:#00aeec;border-color:#00aeec;color:#fff}
   .blm-btn.pri:hover{background:#00a1d6;color:#fff}
   .blm-toast{position:fixed;left:50%;bottom:76px;transform:translateX(-50%) translateY(6px);z-index:1000020;
-    background:rgba(24,25,28,.92);color:#fff;padding:7px 14px;border-radius:6px;font-size:12px;
+    background:rgba(24,25,28,.92);color:#fff;padding:9px 18px;border-radius:8px;font-size:13px;
     opacity:0;transition:opacity .18s ease,transform .18s ease;pointer-events:none;max-width:70vw;
-    box-shadow:0 4px 16px rgba(0,0,0,.18)}
+    box-shadow:0 4px 16px rgba(0,0,0,.18);line-height:1.5}
   .blm-toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
   .blm-ft{display:flex;align-items:center;gap:10px;padding:8px 16px;border-top:1px solid #e3e5e7;font-size:12px;color:#9499a0}
   .blm-pg{display:flex;gap:4px;align-items:center;margin-left:auto}
@@ -590,10 +683,12 @@
       rebuildView();
       render();
       const left = state.list.filter((u) => isSuspicious(u) && !isVerified(u.mid)).length;
-      if (!wall) { toast(left ? `完成，${left} 个未查到` : '核验完成'); break; }
-      if (round >= MAX_RETRY) { toast(`已重试 ${MAX_RETRY} 次，${left} 个未查到`); break; }
-      toast(`接口限流，60 秒后重试（${round + 1}/${MAX_RETRY}）`);
-      await countdown(60);
+      if (!wall) break;
+      if (round >= MAX_RETRY) break;
+      // 撞墙：重试间隔逐次拉长 30 秒（60s → 90s → 120s）
+      const wait = 60 + round * 30;
+      toast(`接口限流，${wait} 秒后重试（${round + 1}/${MAX_RETRY}）`);
+      await countdown(wait);
     }
     // 仍未查到的统一标成「未核验」
     state.list.forEach((u) => {
@@ -602,6 +697,43 @@
     saveStates();
     rebuildView();
     render();
+    await showVerifyReport();
+  }
+
+  // 核验结果统计 + 弹窗
+  function stateStats() {
+    const sus = state.list.filter(isSuspicious);
+    const s = { total: sus.length, ban: 0, cancel: 0, live: 0, failed: 0 };
+    sus.forEach((u) => {
+      if (u.uname === CANCELLED_NAME) { s.cancel++; return; }
+      const st = stateCache.get(String(u.mid));
+      if (!st || st.failed) { s.failed++; return; }
+      if (st.spacesta === -2) { s.ban++; return; }
+      if (st.lv === 0) { s.cancel++; return; }
+      s.live++;
+    });
+    s.done = s.total - s.failed;
+    return s;
+  }
+
+  async function showVerifyReport() {
+    const s = stateStats();
+    const dot = (c) => `<i class="blm-dot" style="background:${c}"></i>`;
+    const rows = [
+      [dot('#4a4a55'), '已封禁', s.ban],
+      [dot('#c45656'), '已注销', s.cancel],
+      [dot('#9499a0'), '无头像（活号）', s.live],
+      [dot('#b88230'), '未核验', s.failed],
+    ].map(([d, name, n]) => `<li><span class="nm">${d}${name}</span><span class="vl">${n}</span></li>`).join('');
+    const body = `<div>已核验 <b>${s.done}</b> / ${s.total} 个疑似账号</div>`
+      + `<ul class="blm-report">${rows}</ul>`
+      + (s.failed ? `<div style="margin-top:8px;font-size:12px">未核验的是被接口限流挡住的，稍后再点一次「核验状态」会从断点继续。</div>` : '');
+    const res = await showReport({
+      title: '核验完成',
+      body,
+      extra: s.failed ? '再查未核验的' : '',
+    });
+    if (res === 'extra' && s.failed) verifyStates();
   }
 
   async function execUnblock() {
@@ -703,7 +835,7 @@
         <button class="blm-btn" data-act="sort:uid">UID</button>
         <button class="blm-btn" data-act="sort:name">昵称</button>
         <button class="blm-btn" data-act="onlySus">只看疑似注销</button>
-        <button class="blm-btn" data-act="verify" title="逐个查询 card 接口，核实账号的真实状态：已封禁（spacesta=-2）、已注销（等级清零且仍有历史数据）、等级。&#10;&#10;注意：B 站对该接口有时间窗口配额（约 100 次请求），连续查询会触发 -352 限流；被限流的账号不会写入缓存，稍后再点一次即可继续核验，不会重复请求已成功的账号。">核验状态</button>
+        <button class="blm-btn" data-act="verify">核验状态</button>
         <button class="blm-btn" data-act="mode">视图：列表</button>
         <select class="blm-inp" style="width:auto" data-act="size">
           <option value="50">每页 50</option><option value="90">每页 90</option><option value="140">每页 140</option>
@@ -719,6 +851,13 @@
       <div class="blm-ft"><span>数据缓存 6 小时 · 可点「重新加载」强制刷新</span><span class="blm-pg"></span></div>`;
     document.body.appendChild(mask);
     document.body.appendChild(panel);
+
+    attachTip(panel.querySelector('[data-act="verify"]'), [
+      '<div class="hd">核验账号状态</div>',
+      '<div>区分<b>已封禁</b>、<b>已注销</b>与真实等级。</div>',
+      '<div class="row"><span class="k">限流</span><span>超出配额返回 <code>-352</code>，自动等待重试</span></div>',
+      '<div class="row"><span class="k">范围</span><span>仅疑似注销，查过的不重复请求</span></div>',
+    ].join(''));
 
     const open = () => {
       state.open = true;

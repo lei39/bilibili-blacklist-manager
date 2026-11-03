@@ -6,3 +6,4 @@ test.user.js
 *.log
 Thumbs.db
 .DS_Store
+.aim.py
