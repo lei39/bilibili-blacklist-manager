@@ -220,7 +220,7 @@ GET /x/v2/reply?type=17&oid=<动态id>
 - `@match` 覆盖整个 `account.bilibili.com`，脚本常驻
 - 每隔 1 秒（前 10 秒每 250ms）检查一次 `location.pathname`
 - 只在 `/account/blacklist` 下挂载按钮；离开该路由时收起面板并隐藏按钮（`:root[data-blm-off]`）
-- 用 `@run-at document-start` + `@early-start` 尽早注入，避免等页面加载完
+- 用 `@run-at document-start` 尽早注入，避免等页面加载完
 
 > 这套组合实测有效：`/account/home` 打开时脚本已在运行但按钮隐藏，点「黑名单管理」后按钮立刻出现。
 
@@ -262,11 +262,19 @@ B 站对 `relation/modify` 也有频率限制，间隔太短会返回错误码�
 ## 更新日志
 
 <details>
+<summary><b>v0.10.10</b> — 移除 <code>@early-start</code></summary>
+
+- `@early-start` 是脚本猫独有元数据，安装页会显示「其他声明 · 仅限脚本猫」，容易被误读成不支持其他管理器
+- 实际它只是可选加速提示，Tampermonkey / Violentmonkey 会忽略并回落到 `@run-at document-start`，功能不受影响
+- 本项目只做 UI 注入，`document-start` 已经足够早，移除后三个管理器行为完全一致
+</details>
+
+<details>
 <summary><b>v0.10.4</b> — 修复从个人中心点进黑名单时按钮不出现</summary>
 
 - `@match` 从黑名单 URL 放宽到整个 `account.bilibili.com`（个人中心是 SPA，路由切换不重新加载页面）
 - 新增路由感知：只在 `/account/blacklist` 挂载，离开时自动收起面板并隐藏按钮
-- `@run-at document-idle` → `document-start` + `@early-start`，注入更早
+- `@run-at document-idle` → `document-start`，注入更早
 - 挂载失败自动重试（250ms × 40 次），并加了看门狗补节点
 - 注入后在 `<html>` 上写 `data-blm="<版本>"`，便于排查
 </details>

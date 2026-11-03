@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         B站黑名单增强管理
 // @namespace    workbuddy.bili.blacklist
-// @version      0.10.9
+// @version      0.10.10
 // @description  在 B 站黑名单页面注入按钮，点击打开浮窗：全量加载、搜索、排序、只看疑似注销、多选、手动批量取消拉黑
 // @author       lei39
 // @license      MIT
@@ -12,13 +12,12 @@
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @run-at       document-start
-// @early-start
 // ==/UserScript==
 
 (() => {
   'use strict';
 
-  const VERSION = '0.10.9';
+  const VERSION = '0.10.10';
 
   const NOFACE = /noface/i;
   const CANCELLED_NAME = '账号已注销';
