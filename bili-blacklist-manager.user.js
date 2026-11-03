@@ -1,21 +1,24 @@
 // ==UserScript==
 // @name         B站黑名单增强管理
 // @namespace    workbuddy.bili.blacklist
-// @version      0.10.2
+// @version      0.10.4
 // @description  在 B 站黑名单页面注入按钮，点击打开浮窗：全量加载、搜索、排序、只看疑似注销、多选、手动批量取消拉黑
 // @author       lei39
 // @license      MIT
 // @homepage     https://github.com/lei39/bilibili-blacklist-manager
-// @match        https://account.bilibili.com/account/blacklist*
+// @match        https://account.bilibili.com/*
 // @downloadURL  https://raw.githubusercontent.com/lei39/bilibili-blacklist-manager/main/bili-blacklist-manager.user.js
 // @updateURL    https://raw.githubusercontent.com/lei39/bilibili-blacklist-manager/main/bili-blacklist-manager.user.js
 // @grant        GM_setValue
 // @grant        GM_getValue
-// @run-at       document-idle
+// @run-at       document-start
+// @early-start
 // ==/UserScript==
 
 (() => {
   'use strict';
+
+  const VERSION = '0.10.4';
 
   const NOFACE = /noface/i;
   const CANCELLED_NAME = '账号已注销';
@@ -191,6 +194,7 @@
     padding:10px 16px;border-radius:22px;background:#00aeec;color:#fff;border:none;cursor:pointer;
     font:13px/1 -apple-system,"Microsoft YaHei",sans-serif;box-shadow:0 4px 16px rgba(0,174,236,.45);transition:.15s}
   .blm-fab:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(0,174,236,.6)}
+  :root[data-blm-off] .blm-fab{display:none !important}
   .blm-mask{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:999999;display:none}
   .blm-mask.on{display:block}
   .blm-panel{position:fixed;top:5vh;left:50%;transform:translateX(-50%);width:min(1120px,94vw);height:88vh;
@@ -658,19 +662,27 @@
   }
 
   // ---------- 挂载 ----------
+  let mounted = false;
+  let closeRef = null;   // mount 内注册，供路由切换时收起面板
   function mount() {
-    if (document.querySelector('.blm-fab')) return;
-    loadStates();
+    if (document.querySelector('.blm-fab')) return true;
+    // document-start 注入时 head / body 可能都还没生成，返回 false 交给外层重试
+    if (!document.body) return false;
+    const head = document.head || document.documentElement;
+    if (!head) return false;
+    if (!mounted) { loadStates(); mounted = true; }
 
     const s = document.createElement('style');
     s.id = 'blm-style';
     s.textContent = CSS;
-    document.head.appendChild(s);
+    head.appendChild(s);
 
     const fab = document.createElement('button');
     fab.className = 'blm-fab';
     fab.textContent = '⚙ 黑名单增强';
+    fab.setAttribute('data-blm-version', VERSION);
     document.body.appendChild(fab);
+    document.documentElement.setAttribute('data-blm', VERSION);
 
     const mask = document.createElement('div');
     mask.className = 'blm-mask';
@@ -726,6 +738,7 @@
       const uc = document.querySelector('.blm-ucard');
       if (uc) uc.classList.remove('on');
     };
+    closeRef = close;
 
     // ---- 头像悬停名片 ----
     const ucard = document.createElement('div');
@@ -896,12 +909,32 @@
         rebuildView(); render();
       }
     });
+    return true;
   }
 
-  let tries = 0;
-  const timer = setInterval(() => {
-    if (document.body) { mount(); clearInterval(timer); }
-    else if (++tries > 60) clearInterval(timer);
-  }, 300);
-  mount();
+  // 看门狗 + 路由感知：
+  //   个人中心是 SPA，从 /account/home 点「黑名单管理」不会重新加载页面，
+  //   所以脚本要一直活着，靠路由判断何时挂载、何时隐藏。
+  function isBlacklistRoute() {
+    return location.pathname.indexOf('/account/blacklist') === 0;
+  }
+  function syncRoute() {
+    const on = isBlacklistRoute();
+    document.documentElement.toggleAttribute('data-blm-off', !on);
+    if (!on) {
+      if (closeRef) closeRef();
+      return;
+    }
+    if (!document.querySelector('.blm-fab') && document.body) mount();
+  }
+
+  // 前 10 秒每 250ms 试一次（等 body + 等路由），之后降到 1 秒
+  let fastTries = 0;
+  const bootTimer = setInterval(() => {
+    syncRoute();
+    if (++fastTries > 40) clearInterval(bootTimer);
+  }, 250);
+  syncRoute();
+  setInterval(syncRoute, 1000);
+  window.addEventListener('popstate', syncRoute);
 })();

@@ -205,6 +205,25 @@ GET /x/v2/reply?type=17&oid=<动态id>
 
 而且那是**评论者自己的属地**，不是主页主人的。想查某个账号的属地，只能翻他发过的评论反查，成本很高。
 
+### 为什么 @match 是整个 account 子域
+
+```
+// @match  https://account.bilibili.com/*
+```
+
+看起来应该只匹配 `/account/blacklist`，实际上不行。
+
+个人中心是 **SPA**：从 `/account/home` 点侧栏的「黑名单管理」，走的是 `pushState` 路由切换，**不会重新加载页面**。如果脚本只在黑名单 URL 注入，那么用户从首页点进来时，脚本文档从一开始就没运行过——路由变了也没有任何东西去响应，按钮自然不出现。
+
+所以现在的做法是：
+
+- `@match` 覆盖整个 `account.bilibili.com`，脚本常驻
+- 每隔 1 秒（前 10 秒每 250ms）检查一次 `location.pathname`
+- 只在 `/account/blacklist` 下挂载按钮；离开该路由时收起面板并隐藏按钮（`:root[data-blm-off]`）
+- 用 `@run-at document-start` + `@early-start` 尽早注入，避免等页面加载完
+
+> 这套组合实测有效：`/account/home` 打开时脚本已在运行但按钮隐藏，点「黑名单管理」后按钮立刻出现。
+
 ### 性能与缓存
 
 | 项目 | 策略 |
@@ -241,6 +260,16 @@ B 站对 `relation/modify` 也有频率限制，间隔太短会返回错误码�
 ---
 
 ## 更新日志
+
+<details>
+<summary><b>v0.10.4</b> — 修复从个人中心点进黑名单时按钮不出现</summary>
+
+- `@match` 从黑名单 URL 放宽到整个 `account.bilibili.com`（个人中心是 SPA，路由切换不重新加载页面）
+- 新增路由感知：只在 `/account/blacklist` 挂载，离开时自动收起面板并隐藏按钮
+- `@run-at document-idle` → `document-start` + `@early-start`，注入更早
+- 挂载失败自动重试（250ms × 40 次），并加了看门狗补节点
+- 注入后在 `<html>` 上写 `data-blm="<版本>"`，便于排查
+</details>
 
 <details>
 <summary><b>v0.10.x</b> — 账号状态核验</summary>
