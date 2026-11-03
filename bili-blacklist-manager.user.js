@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         B站黑名单增强管理
 // @namespace    workbuddy.bili.blacklist
-// @version      0.10.8
+// @version      0.10.9
 // @description  在 B 站黑名单页面注入按钮，点击打开浮窗：全量加载、搜索、排序、只看疑似注销、多选、手动批量取消拉黑
 // @author       lei39
 // @license      MIT
@@ -18,7 +18,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '0.10.8';
+  const VERSION = '0.10.9';
 
   const NOFACE = /noface/i;
   const CANCELLED_NAME = '账号已注销';
@@ -854,9 +854,10 @@
 
     attachTip(panel.querySelector('[data-act="verify"]'), [
       '<div class="hd">核验账号状态</div>',
-      '<div>区分<b>已封禁</b>、<b>已注销</b>与真实等级。</div>',
-      '<div class="row"><span class="k">限流</span><span>超出配额返回 <code>-352</code>，自动等待重试</span></div>',
-      '<div class="row"><span class="k">范围</span><span>仅疑似注销，查过的不重复请求</span></div>',
+      '<div>逐个查接口，区分<b>已封禁</b>、<b>已注销</b>与真实等级。</div>',
+      '<div class="row"><span class="k">限流</span><span>B 站<b>官方接口</b>限速，超额返回 <code>-352</code></span></div>',
+      '<div class="row"><span class="k">重试</span><span>最多 <b>3</b> 次，每次等待 <b>60</b> / <b>90</b> / <b>120</b> 秒</span></div>',
+      '<div class="row"><span class="k">范围</span><span>仅「疑似注销」，已查过的不重复请求</span></div>',
     ].join(''));
 
     const open = () => {
